@@ -19,32 +19,43 @@ class GameApiController extends Controller
         return response()->json($categories);
     }
 
-    public function startGame($categoryId)
-    {
-        // Seleccionamos 10 palabras únicas de la categoría
-        $words = Word::where('category_id', $categoryId)
-            ->inRandomOrder()
-            ->take(10)
-            ->get()
-            ->unique('id'); // Aseguramos que los IDs sean únicos
+    use App\Models\Word;
 
-        if ($words->isEmpty()) {
-            return response()->json(['error' => 'No hay suficientes palabras'], 404);
-        }
+public function startGame($categoryId)
+{
+    // Cargar palabras con sus opciones relacionadas
+    $words = Word::where('category_id', $categoryId)
+        ->with(['options' => function ($query) {
+            $query->select('id', 'word_id', 'option_text');
+        }])
+        ->inRandomOrder()
+        ->take(10)
+        ->get();
 
-        // Guardamos progreso en sesión (opcional) o base de datos
-        session([$this->gameKey => [
-            'category_id' => $categoryId,
-            'words' => $words->toArray(),
-            'answered' => [],
-            'score' => 0
-        ]]);
-
-        return response()->json([
-            'total_questions' => $words->count(),
-            'words' => $words->map(fn($word) => ['id' => $word['id'], 'word' => $word['word']]),
-        ]);
+    if ($words->isEmpty()) {
+        return response()->json(['error' => 'No hay suficientes palabras'], 404);
     }
+
+    // Guardar en sesión (opcional)
+    session([$this->gameKey => [
+        'category_id' => $categoryId,
+        'words' => $words->toArray(),
+        'answered' => [],
+        'score' => 0
+    ]]);
+
+    return response()->json([
+        'total_questions' => $words->count(),
+        'words' => $words->map(function ($word) {
+            return [
+                'id' => $word->id,
+                'word' => $word->word,
+                'options' => $word->options->pluck('option_text')->toArray(),
+                'correct_meaning' => $word->correct_meaning
+            ];
+        })
+    ]);
+}
 
     public function play()
     {
