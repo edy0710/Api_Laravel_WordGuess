@@ -19,53 +19,51 @@ class GameApiController extends Controller
         return response()->json($categories);
     }
 
-    use App\Models\Word;
+    public function startGame($categoryId)
+    {
+        // Cargar palabras con sus opciones relacionadas
+        $words = Word::where('category_id', $categoryId)
+            ->with(['options' => function ($query) {
+                $query->select('id', 'word_id', 'option_text');
+            }])
+            ->inRandomOrder()
+            ->take(10)
+            ->get();
 
-public function startGame($categoryId)
-{
-    // Cargar palabras con sus opciones relacionadas
-    $words = Word::where('category_id', $categoryId)
-        ->with(['options' => function ($query) {
-            $query->select('id', 'word_id', 'option_text');
-        }])
-        ->inRandomOrder()
-        ->take(10)
-        ->get();
+        if ($words->isEmpty()) {
+            return response()->json(['error' => 'No hay suficientes palabras'], 404);
+        }
 
-    if ($words->isEmpty()) {
-        return response()->json(['error' => 'No hay suficientes palabras'], 404);
+        // Guardar en sesión (opcional)
+        session([$this->gameKey => [
+            'category_id' => $categoryId,
+            'words' => $words->toArray(),
+            'answered' => [],
+            'score' => 0
+        ]]);
+
+        return response()->json([
+            'total_questions' => $words->count(),
+            'words' => $words->map(function ($word) {
+                return [
+                    'id' => $word['id'],
+                    'word' => $word['word'],
+                    'options' => $word['options'],
+                    'correct_meaning' => $word['correct_meaning']
+                ];
+            })
+        ]);
     }
-
-    // Guardar en sesión (opcional)
-    session([$this->gameKey => [
-        'category_id' => $categoryId,
-        'words' => $words->toArray(),
-        'answered' => [],
-        'score' => 0
-    ]]);
-
-    return response()->json([
-        'total_questions' => $words->count(),
-        'words' => $words->map(function ($word) {
-            return [
-                'id' => $word->id,
-                'word' => $word->word,
-                'options' => $word->options->pluck('option_text')->toArray(),
-                'correct_meaning' => $word->correct_meaning
-            ];
-        })
-    ]);
-}
 
     public function play()
     {
-        $data = session($this->gameKey);
+        $data = Session::get($this->gameKey);
 
         if (!$data || empty($data['words'])) {
             return response()->json(['error' => 'Juego no iniciado'], 400);
         }
 
-        $currentQuestionIndex = count($data['answered']); // cuántas ha acertado ya
+        $currentQuestionIndex = count($data['answered']);
 
         if ($currentQuestionIndex >= count($data['words'])) {
             return response()->json(['finished' => true]);
@@ -73,12 +71,10 @@ public function startGame($categoryId)
 
         $currentWord = $data['words'][$currentQuestionIndex];
 
-        // Obtener opciones mezcladas
-        $options = Option::where('word_id', $currentWord['id'])->get();
-
         return response()->json([
             'word' => $currentWord['word'],
-            'options' => $options->pluck('option_text'),
+            'correct_meaning' => $currentWord['correct_meaning'],
+            'options' => $currentWord['options'],
             'question_number' => $currentQuestionIndex + 1,
             'total_questions' => count($data['words'])
         ]);
@@ -86,7 +82,7 @@ public function startGame($categoryId)
 
     public function checkAnswer(Request $request)
     {
-        $data = session($this->gameKey);
+        $data = Session::get($this->gameKey);
 
         if (!$data) {
             return response()->json(['error' => 'Juego no iniciado'], 400);
@@ -106,7 +102,7 @@ public function startGame($categoryId)
             $data['answered'][] = $currentWord['id'];
         }
 
-        session([$this->gameKey => $data]);
+        Session::put($this->gameKey, $data);
 
         return response()->json([
             'is_correct' => $isCorrect,
@@ -119,7 +115,7 @@ public function startGame($categoryId)
 
     public function results()
     {
-        $data = session($this->gameKey);
+        $data = Session::get($this->gameKey);
 
         if (!$data) {
             return response()->json(['error' => 'Sin datos del juego'], 400);
