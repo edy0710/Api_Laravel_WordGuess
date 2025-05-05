@@ -1612,7 +1612,7 @@
             },
             "require": {
                 "dflydev/dot-access-data": "^3.0.1",
-                "nette/schema": "^1.2",
+                "nette/schema": "^1.2.5",
                 "php": "^7.4 || ^8.0"
             },
             "require-dev": {
@@ -2091,7 +2091,7 @@
             },
             "require": {
                 "nette/utils": "^2.5.7 || ^3.1.5 ||  ^4.0",
-                "php": "7.1 - 8.3"
+                "php": "7.1 - 8.4.1"
             },
             "require-dev": {
                 "nette/tester": "^2.3 || ^2.4",
