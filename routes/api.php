@@ -14,7 +14,7 @@ Route::post('/logout', [ApiAuthController::class, 'logout'])->middleware('auth:s
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/categories', [GameApiController::class, 'categories']);
     Route::get('/game/start/{categoryId}', [GameApiController::class, 'startGame']);
-    Route::get('/game/play', [GameApiController::class, 'play']);
+    Route::get('/game/play/{id?}', [GameApiController::class, 'play'])->where('id', '[0-9]+');
     Route::post('/game/check', [GameApiController::class, 'checkAnswer']);
     Route::get('/game/results', [GameApiController::class, 'results']);
 });
