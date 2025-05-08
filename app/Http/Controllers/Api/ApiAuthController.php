@@ -56,4 +56,13 @@ class ApiAuthController extends Controller
             'user' => $user
         ]);
     }
+    public function logout(Request $request)
+    {
+        // Revocar el token actual
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json([
+            'message' => 'Logout exitoso'
+        ]);
+    }
 }
