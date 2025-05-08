@@ -54,7 +54,7 @@ class GameApiController extends Controller
         ]);
     }
 
-    public function play($id = null)
+    public function play()
     {
         $data = Session::get($this->gameKey);
 
@@ -62,23 +62,24 @@ class GameApiController extends Controller
             return response()->json(['error' => 'Juego no iniciado'], 400);
         }
 
-        $index = $id !== null ? (int)$id - 1 : count($data['answered']);
+        $answeredCount = count($data['answered']);
+        $totalQuestions = count($data['words']);
 
-        if (!isset($data['words'][$index])) {
-            return response()->json(['error' => 'Pregunta no encontrada'], 404);
+        if ($answeredCount >= $totalQuestions) {
+            return response()->json(['finished' => true]);
         }
 
-        $currentWord = $data['words'][$index];
+        $currentWord = $data['words'][$answeredCount];
 
-        // Obtener opciones desde base de datos (no desde sesión)
-        $options = Option::where('word_id', $currentWord['id'])->get();
+        // Obtener las opciones reales desde la base de datos
+        $options = Option::where('word_id', $currentWord['id'])->pluck('option_text')->toArray();
 
         return response()->json([
             'word' => $currentWord['word'],
-            'options' => $options->pluck('option_text'),
-            'question_number' => $index + 1,
-            'total_questions' => count($data['words']),
-            'finished' => false
+            'id' => $currentWord['id'],
+            'options' => $options,
+            'question_number' => $answeredCount + 1,
+            'total_questions' => $totalQuestions
         ]);
     }
 
@@ -91,12 +92,14 @@ class GameApiController extends Controller
         }
 
         $currentQuestionIndex = count($data['answered']);
-        $currentWord = $data['words'][$currentQuestionIndex] ?? null;
 
-        if (!$currentWord) {
+        if ($currentQuestionIndex >= count($data['words'])) {
             return response()->json(['error' => 'No hay más preguntas'], 400);
         }
 
+        $currentWord = $data['words'][$currentQuestionIndex];
+
+        // Verificar respuesta correcta usando el significado real
         $isCorrect = $request->input('option') === $currentWord['correct_meaning'];
 
         if ($isCorrect) {
