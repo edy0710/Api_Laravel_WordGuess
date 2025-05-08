@@ -54,9 +54,18 @@ class GameApiController extends Controller
         ]);
     }
 
-    public function play()
+    public function play(Request $request)
     {
-        $data = Session::get($this->gameKey);
+        // Obtener el usuario autenticado
+        $user = $request->user();
+        
+        if (!$user) {
+            return response()->json(['error' => 'No autenticado'], 401);
+        }
+
+        // Usar el ID de usuario para almacenar los datos del juego
+        $gameKey = 'api_game_data_' . $user->id;
+        $data = session($gameKey);
 
         if (!$data || empty($data['words'])) {
             return response()->json(['error' => 'Juego no iniciado'], 400);

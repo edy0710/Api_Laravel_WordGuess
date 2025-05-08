@@ -57,12 +57,35 @@ class ApiAuthController extends Controller
         ]);
     }
     public function logout(Request $request)
-    {
+{
+    // Verificar si el usuario está autenticado
+    if ($request->user()) {
         // Revocar el token actual
         $request->user()->currentAccessToken()->delete();
-
+        
         return response()->json([
             'message' => 'Logout exitoso'
+        ]);
+    }
+
+    return response()->json([
+        'message' => 'No autenticado'
+    ], 401);
+}
+
+    public function showProfile()
+    {
+        $user = auth()->user();
+        $categories = Category::withCount(['words'])
+                        ->orderBy('name')
+                        ->get();
+        
+        return view('profile.show', [
+            'user' => $user,
+            'categories' => $categories,
+            'totalPoints' => $user->points,
+            'completedCount' => $user->completedCategories()->count(),
+            'totalCategories' => Category::count()
         ]);
     }
 }
