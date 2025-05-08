@@ -8,7 +8,9 @@ use App\Http\Controllers\Api\GameApiController;
 // Autenticación Sanctum
 Route::post('/register', [ApiAuthController::class, 'register']);
 Route::post('/login', [ApiAuthController::class, 'login']);
-Route::post('/logout', [ApiAuthController::class, 'logout'])->middleware('auth:sanctum');
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/logout', [ApiAuthController::class, 'logout']);
+});
 
 // Juego - API
 Route::middleware('auth:sanctum')->group(function () {
