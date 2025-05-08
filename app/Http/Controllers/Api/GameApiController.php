@@ -129,4 +129,26 @@ class GameApiController extends Controller
             'message' => $data['score'] === count($data['words']) ? '¡Has completado todas!' : 'Sigue practicando'
         ]);
     }
+    public function listWords()
+    {
+        $data = Session::get($this->gameKey);
+
+        if (!$data || empty($data['words'])) {
+            return response()->json(['error' => 'Juego no iniciado'], 400);
+        }
+
+        return response()->json([
+            'total_questions' => count($data['words']),
+            'score' => $data['score'],
+            'answered_ids' => $data['answered'],
+            'words' => collect($data['words'])->map(function ($word) {
+                return [
+                    'id' => $word['id'],
+                    'word' => $word['word'],
+                    'correct_meaning' => $word['correct_meaning'],
+                    'options' => $word['options'] ?? []
+                ];
+            })
+        ]);
+    }
 }
