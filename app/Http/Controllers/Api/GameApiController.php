@@ -21,36 +21,55 @@ class GameApiController extends Controller
 
     public function startGame($categoryId)
     {
-        // Cargar 10 palabras aleatorias con sus opciones relacionadas
-        $words = Word::where('category_id', $categoryId)
-            ->with(['options' => function ($query) {
-                $query->select('id', 'word_id', 'option_text');
-            }])
-            ->inRandomOrder()
-            ->take(10)
-            ->get();
+        try {
+            $user = auth()->user();
+            if (!$user) {
+                return response()->json(['error' => 'Usuario no autenticado'], 401);
+            }
 
-        if ($words->isEmpty()) {
-            return response()->json(['error' => 'No hay suficientes palabras en esta categoría'], 404);
+            $category = Category::findOrFail($categoryId);
+
+            $words = Word::where('category_id', $categoryId)
+                ->with(['options' => function($query) {
+                    $query->select('id', 'word_id', 'option_text');
+                }])
+                ->inRandomOrder()
+                ->take(10)
+                ->get();
+
+            if ($words->isEmpty()) {
+                return response()->json([
+                    'error' => 'Categoría vacía',
+                    'message' => 'Esta categoría no contiene palabras'
+                ], 404);
+            }
+
+            $gameData = [
+                'category_id' => $categoryId,
+                'words' => $words->toArray(),
+                'answered' => [],
+                'score' => 0,
+                'started_at' => now()->toDateTimeString()
+            ];
+
+            // Almacenar en cache con clave única por usuario
+            $gameKey = 'game_session_' . $user->id;
+            Cache::put($gameKey, $gameData, now()->addHours(2)); // Expira en 2 horas
+
+            return response()->json([
+                'success' => true,
+                'category' => $category->name,
+                'total_questions' => $words->count(),
+                'first_word' => $words->first()->word,
+                'game_key' => $gameKey // Para debug
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'error' => 'Categoría no encontrada',
+                'available_categories' => Category::all()->pluck('id', 'name')
+            ], 404);
         }
-
-        Cache::put($gameKey, [
-            'category_id' => $categoryId,
-            'words' => $words->toArray(),
-            'answered' => [],
-            'score' => 0
-        ], now()->addHours(2)); // Expira en 2 horas
-
-        return response()->json([
-            'total_questions' => count($words),
-            'words' => $words->map(function ($word) {
-                return [
-                    'id' => $word['id'],
-                    'word' => $word['word'],
-                    'correct_meaning' => $word['correct_meaning']
-                ];
-            })
-        ]);
     }
 
     public function play(Request $request)
