@@ -21,7 +21,7 @@ class GameApiController extends Controller
 
     public function startGame($categoryId)
     {
-        // Cargar palabras con sus opciones relacionadas
+        // Cargar 10 palabras aleatorias con sus opciones relacionadas
         $words = Word::where('category_id', $categoryId)
             ->with(['options' => function ($query) {
                 $query->select('id', 'word_id', 'option_text');
@@ -31,31 +31,30 @@ class GameApiController extends Controller
             ->get();
 
         if ($words->isEmpty()) {
-            return response()->json(['error' => 'No hay suficientes palabras'], 404);
+            return response()->json(['error' => 'No hay suficientes palabras en esta categoría'], 404);
         }
 
-        // Guardar en sesión (opcional)
-        session([$this->gameKey => [
+        // Guardar progreso en sesión
+        Session::put($this->gameKey, [
             'category_id' => $categoryId,
             'words' => $words->toArray(),
             'answered' => [],
             'score' => 0
-        ]]);
+        ]);
 
         return response()->json([
-            'total_questions' => $words->count(),
+            'total_questions' => count($words),
             'words' => $words->map(function ($word) {
                 return [
                     'id' => $word['id'],
                     'word' => $word['word'],
-                    'options' => $word['options'],
                     'correct_meaning' => $word['correct_meaning']
                 ];
             })
         ]);
     }
 
-    public function play($id=null)
+    public function play($id = null)
     {
         $data = Session::get($this->gameKey);
 
@@ -69,15 +68,17 @@ class GameApiController extends Controller
             return response()->json(['error' => 'Pregunta no encontrada'], 404);
         }
 
-        $word = $data['words'][$index];
-        $options = Option::where('word_id', $word['id'])->get();
+        $currentWord = $data['words'][$index];
+
+        // Obtener opciones desde base de datos (no desde sesión)
+        $options = Option::where('word_id', $currentWord['id'])->get();
 
         return response()->json([
-            'word' => $word['word'],
-            'options' => $options->pluck('option_text')->toArray(),
-            'correct_meaning' => $word['correct_meaning'],
+            'word' => $currentWord['word'],
+            'options' => $options->pluck('option_text'),
             'question_number' => $index + 1,
-            'total_questions' => count($data['words'])
+            'total_questions' => count($data['words']),
+            'finished' => false
         ]);
     }
 
@@ -129,6 +130,7 @@ class GameApiController extends Controller
             'message' => $data['score'] === count($data['words']) ? '¡Has completado todas!' : 'Sigue practicando'
         ]);
     }
+
     public function listWords()
     {
         $data = Session::get($this->gameKey);
@@ -137,18 +139,19 @@ class GameApiController extends Controller
             return response()->json(['error' => 'Juego no iniciado'], 400);
         }
 
+        $words = collect($data['words'])->map(function ($word) {
+            return [
+                'id' => $word['id'],
+                'word' => $word['word'],
+                'correct_meaning' => $word['correct_meaning'],
+                'options' => Option::where('word_id', $word['id'])->pluck('option_text')->toArray()
+            ];
+        });
+
         return response()->json([
             'total_questions' => count($data['words']),
-            'score' => $data['score'],
             'answered_ids' => $data['answered'],
-            'words' => collect($data['words'])->map(function ($word) {
-                return [
-                    'id' => $word['id'],
-                    'word' => $word['word'],
-                    'correct_meaning' => $word['correct_meaning'],
-                    'options' => $word['options'] ?? []
-                ];
-            })
+            'words' => $words
         ]);
     }
 }
