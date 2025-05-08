@@ -34,13 +34,12 @@ class GameApiController extends Controller
             return response()->json(['error' => 'No hay suficientes palabras en esta categoría'], 404);
         }
 
-        // Guardar progreso en sesión
-        Session::put($this->gameKey, [
+        Cache::put($gameKey, [
             'category_id' => $categoryId,
             'words' => $words->toArray(),
             'answered' => [],
             'score' => 0
-        ]);
+        ], now()->addHours(2)); // Expira en 2 horas
 
         return response()->json([
             'total_questions' => count($words),
@@ -56,39 +55,65 @@ class GameApiController extends Controller
 
     public function play(Request $request)
     {
-        // Obtener el usuario autenticado
+        // Verificación robusta de autenticación
         $user = $request->user();
-        
         if (!$user) {
-            return response()->json(['error' => 'No autenticado'], 401);
+            return response()->json([
+                'error' => 'No autenticado',
+                'solution' => 'Debes hacer login primero y enviar el token en los headers'
+            ], 401);
         }
 
-        // Usar el ID de usuario para almacenar los datos del juego
-        $gameKey = 'api_game_data_' . $user->id;
-        $data = session($gameKey);
+        // Usar cache en lugar de sesión para entornos cloud
+        $gameKey = 'game_session_' . $user->id;
+        $data = Cache::get($gameKey);
 
         if (!$data || empty($data['words'])) {
-            return response()->json(['error' => 'Juego no iniciado'], 400);
+            return response()->json([
+                'error' => 'Juego no iniciado o sesión expirada',
+                'required_steps' => [
+                    '1. POST /api/login para obtener token',
+                    '2. GET /api/game/start/{categoryId} para iniciar juego',
+                    '3. GET /api/game/play (usando el mismo token)'
+                ],
+                'debug_info' => [
+                    'user_id' => $user->id,
+                    'cache_key' => $gameKey,
+                    'session_status' => $data ? 'exists' : 'missing'
+                ]
+            ], 400);
         }
 
-        $answeredCount = count($data['answered']);
+        // Verificar progreso del juego
+        $answeredCount = count($data['answered'] ?? []);
         $totalQuestions = count($data['words']);
 
         if ($answeredCount >= $totalQuestions) {
-            return response()->json(['finished' => true]);
+            return response()->json([
+                'finished' => true,
+                'score' => $data['score'] ?? 0,
+                'total' => $totalQuestions
+            ]);
         }
 
+        // Obtener la palabra actual
         $currentWord = $data['words'][$answeredCount];
 
-        // Obtener las opciones reales desde la base de datos
-        $options = Option::where('word_id', $currentWord['id'])->pluck('option_text')->toArray();
+        // Obtener opciones con cache para mejor rendimiento
+        $options = Cache::remember("word_options_{$currentWord['id']}", now()->addHours(1), function () use ($currentWord) {
+            return Option::where('word_id', $currentWord['id'])
+                    ->pluck('option_text')
+                    ->toArray();
+        });
 
         return response()->json([
             'word' => $currentWord['word'],
             'id' => $currentWord['id'],
             'options' => $options,
             'question_number' => $answeredCount + 1,
-            'total_questions' => $totalQuestions
+            'total_questions' => $totalQuestions,
+            'progress' => round(($answeredCount / $totalQuestions) * 100) . '%',
+            'remaining' => $totalQuestions - $answeredCount
         ]);
     }
 
