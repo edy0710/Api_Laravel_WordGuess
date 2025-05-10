@@ -151,21 +151,22 @@ class GameApiController extends Controller
 
     public function listWords()
     {
-        // Obtener datos del juego desde la sesión
-        $data = Session::get($this->gameKey);
+        $query = Word::with('options');
 
-        if (!$data || empty($data['words'])) {
-            return response()->json(['error' => 'Juego no iniciado'], 400);
+        if ($request->has('category')) {
+            $query->where('category_id', $request->input('category'));
         }
 
+        $words = $query->get();
+
         return response()->json([
-            'total_questions' => count($data['words']),
-            'words' => collect($data['words'])->map(function ($word) {
+            'total_words' => $words->count(),
+            'words' => $words->map(function ($word) {
                 return [
-                    'id' => $word['id'],
-                    'word' => $word['word'],
-                    'correct_meaning' => $word['correct_meaning'],
-                    'options' => $word['options'] ?? []
+                    'id' => $word->id,
+                    'word' => $word->word,
+                    'correct_meaning' => $word->correct_meaning,
+                    'options' => $word->options->pluck('option_text')
                 ];
             })
         ]);
