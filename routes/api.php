@@ -16,4 +16,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/game/check', [GameApiController::class, 'checkAnswer']);
     Route::get('/game/results', [GameApiController::class, 'results']);
     Route::get('/game/word/{id}', [GameApiController::class, 'word']);
+    Route::get('/game/words', [GameApiController::class, 'listWords']);
 });

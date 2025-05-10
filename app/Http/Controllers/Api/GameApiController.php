@@ -148,4 +148,26 @@ class GameApiController extends Controller
             'options' => $word->options->pluck('option_text')->shuffle()->toArray()
         ]);
     }
+
+    public function listWords()
+    {
+        // Obtener datos del juego desde la sesión
+        $data = Session::get($this->gameKey);
+
+        if (!$data || empty($data['words'])) {
+            return response()->json(['error' => 'Juego no iniciado'], 400);
+        }
+
+        return response()->json([
+            'total_questions' => count($data['words']),
+            'words' => collect($data['words'])->map(function ($word) {
+                return [
+                    'id' => $word['id'],
+                    'word' => $word['word'],
+                    'correct_meaning' => $word['correct_meaning'],
+                    'options' => $word['options'] ?? []
+                ];
+            })
+        ]);
+    }
 }
