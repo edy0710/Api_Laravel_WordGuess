@@ -149,15 +149,19 @@ class GameApiController extends Controller
         ]);
     }
 
-    public function listWords()
+
+    public function listAllWords()
     {
-        $query = Word::with('options');
+        // Obtener todas las palabras con sus opciones
+        $words = Word::with(['options' => function($query) {
+            $query->select('id', 'word_id', 'option_text');
+        }])->get();
 
-        if ($request->has('category')) {
-            $query->where('category_id', $request->input('category'));
+        if ($words->isEmpty()) {
+            return response()->json([
+                'error' => 'No hay palabras disponibles'
+            ], 404);
         }
-
-        $words = $query->get();
 
         return response()->json([
             'total_words' => $words->count(),
@@ -166,7 +170,7 @@ class GameApiController extends Controller
                     'id' => $word->id,
                     'word' => $word->word,
                     'correct_meaning' => $word->correct_meaning,
-                    'options' => $word->options->pluck('option_text')
+                    'options' => $word->options->pluck('option_text')->shuffle()->toArray()
                 ];
             })
         ]);
