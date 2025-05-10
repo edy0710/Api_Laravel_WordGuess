@@ -175,4 +175,66 @@ class GameApiController extends Controller
             })
         ]);
     }
+
+
+
+    public function dailyWord()
+    {
+        // Palabra única por día
+        $cacheKey = 'daily_word_' . now()->format('Y-m-d');
+
+        // Si ya está cacheada, devuélvela
+        if (Cache::has($cacheKey)) {
+            return response()->json(Cache::get($cacheKey));
+        }
+
+        // Si no, obtén una palabra aleatoria
+        $word = Word::inRandomOrder()->first();
+
+        if (!$word) {
+            return response()->json(['error' => 'No hay palabras disponibles'], 404);
+        }
+
+        // Obtén sus opciones desde la base de datos
+        $options = $word->options->pluck('option_text')->shuffle()->toArray();
+
+        $data = [
+            'id' => $word->id,
+            'word' => $word->word,
+            'correct_meaning' => $word->correct_meaning,
+            'options' => $options,
+            'generated_at' => now()->toDateTimeString(),
+            'expires_in' => now()->endOfDay()->diffForHumans(now(), true)
+        ];
+
+        // Guardar en caché por 24 horas
+        Cache::put($cacheKey, $data, now()->addDay());
+
+        return response()->json($data);
+    }
+    
+    public function checkDailyWord(Request $request)
+    {
+        $optionText = $request->input('option_text');
+
+        if (!$optionText) {
+            return response()->json(['error' => 'Falta opción'], 400);
+        }
+
+        // Obtener palabra del día
+        $cacheKey = 'daily_word_' . now()->format('Y-m-d');
+        $cached = Cache::get($cacheKey);
+
+        if (!$cached) {
+            return response()->json(['error' => 'No se encontró la palabra del día', 'solution' => 'Intenta más tarde o recarga la palabra'], 400);
+        }
+
+        $isCorrect = $optionText === $cached['correct_meaning'];
+
+        return response()->json([
+            'is_correct' => $isCorrect,
+            'correct_answer' => $cached['correct_meaning'],
+            'message' => $isCorrect ? '✅ ¡Respuesta correcta!' : '❌ Respuesta incorrecta'
+        ]);
+    }
 }
