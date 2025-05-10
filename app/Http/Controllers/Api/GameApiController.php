@@ -64,7 +64,6 @@ class GameApiController extends Controller
 
     public function play($wordId)
     {
-        // Buscar la palabra por su ID
         $word = Word::with('options')->find($wordId);
 
         if (!$word) {
@@ -72,46 +71,50 @@ class GameApiController extends Controller
         }
 
         return response()->json([
-            'id' => $word->id,
+            'word_id' => $word->id,
             'word' => $word->word,
-            'correct_meaning' => $word->correct_meaning,
-            'options' => $word->options->pluck('option_text')->shuffle()->toArray()
+            'options' => $word->options->shuffle()->pluck('option_text')
         ]);
     }
 
+ 
+
+    // Verifica si la opción es correcta y devuelve la siguiente palabra
     public function checkAnswer(Request $request)
     {
-        $data = Session::get($this->gameKey);
+        $optionText = $request->input('option_text');
+        $wordId = $request->input('word_id');
 
-        if (!$data) {
-            return response()->json(['error' => 'Juego no iniciado'], 400);
+        if (!$wordId || !$optionText) {
+            return response()->json(['error' => 'Faltan parámetros'], 400);
         }
 
-        $answeredCount = count($data['answered']);
+        $word = Word::with('options')->find($wordId);
 
-        if ($answeredCount >= count($data['words'])) {
-            return response()->json(['error' => 'Ya respondiste todas las preguntas'], 400);
+        if (!$word) {
+            return response()->json(['error' => 'Palabra no encontrada'], 404);
         }
 
-        $currentWord = $data['words'][$answeredCount];
+        $correctMeaning = $word->correct_meaning;
+        $isCorrect = $optionText === $correctMeaning;
 
-        $isCorrect = $request->input('option') === $currentWord['correct_meaning'];
-
-        if ($isCorrect) {
-            $data['score']++;
-            $data['answered'][] = $currentWord['id'];
-        }
-
-        Session::put($this->gameKey, $data);
+        // Obtener siguiente palabra (puedes mejorar esto según tu lógica)
+        $nextWord = Word::where('id', '>', $wordId)
+            ->inRandomOrder()
+            ->first();
 
         return response()->json([
             'is_correct' => $isCorrect,
-            'score' => $data['score'],
-            'next_question' => $answeredCount + 1,
-            'total_questions' => count($data['words']),
-            'finished' => $answeredCount + 1 >= count($data['words'])
+            'correct_answer' => $correctMeaning,
+            'next_word' => $nextWord ? [
+                'word_id' => $nextWord->id,
+                'word' => $nextWord->word,
+                'options' => $nextWord->options->shuffle()->pluck('option_text')
+            ] : null,
+            'message' => $nextWord ? 'Siguiente pregunta' : 'Fin del juego'
         ]);
     }
+
 
     public function results()
     {
