@@ -22,116 +22,128 @@ class GameApiController extends Controller
     public function startGame($categoryId)
     {
         try {
+            // Verificación robusta de autenticación
             $user = auth()->user();
             if (!$user) {
-                return response()->json(['error' => 'Usuario no autenticado'], 401);
+                return response()->json([
+                    'error' => 'Usuario no autenticado',
+                    'solution' => 'Debes hacer login primero y enviar el token válido'
+                ], 401);
             }
 
-            $category = Category::findOrFail($categoryId);
+            // Validación de categoría
+            $category = Category::withCount('words')->findOrFail($categoryId);
 
+            // Verificar que la categoría tenga palabras
+            if ($category->words_count < 1) {
+                return response()->json([
+                    'error' => 'Categoría sin palabras',
+                    'message' => 'Esta categoría no contiene palabras disponibles',
+                    'category_id' => $categoryId,
+                    'category_name' => $category->name
+                ], 422);
+            }
+
+            // Obtener palabras con sus opciones
             $words = Word::where('category_id', $categoryId)
                 ->with(['options' => function($query) {
-                    $query->select('id', 'word_id', 'option_text');
+                    $query->inRandomOrder()->select('id', 'word_id', 'option_text');
                 }])
                 ->inRandomOrder()
                 ->take(10)
-                ->get();
+                ->get()
+                ->map(function($word) {
+                    // Mezclar opciones para cada palabra
+                    $word->options = $word->options->shuffle();
+                    return $word;
+                });
 
-            if ($words->isEmpty()) {
-                return response()->json([
-                    'error' => 'Categoría vacía',
-                    'message' => 'Esta categoría no contiene palabras'
-                ], 404);
-            }
-
+            // Preparar datos del juego
             $gameData = [
                 'category_id' => $categoryId,
+                'category_name' => $category->name,
                 'words' => $words->toArray(),
                 'answered' => [],
                 'score' => 0,
-                'started_at' => now()->toDateTimeString()
+                'started_at' => now()->toDateTimeString(),
+                'last_activity' => now()->toDateTimeString()
             ];
 
-            // Almacenar en cache con clave única por usuario
-            $gameKey = 'game_session_' . $user->id;
-            Cache::put($gameKey, $gameData, now()->addHours(2)); // Expira en 2 horas
+            // Clave única por usuario y categoría
+            $gameKey = 'game_session_' . $user->id . '_' . $categoryId;
+            
+            // Almacenar en cache (2 horas de duración)
+            Cache::put($gameKey, $gameData, now()->addHours(2));
 
             return response()->json([
                 'success' => true,
-                'category' => $category->name,
-                'total_questions' => $words->count(),
-                'first_word' => $words->first()->word,
-                'game_key' => $gameKey // Para debug
+                'message' => 'Juego iniciado correctamente',
+                'game_key' => $gameKey,
+                'category' => [
+                    'id' => $categoryId,
+                    'name' => $category->name
+                ],
+                'game_details' => [
+                    'total_questions' => $words->count(),
+                    'first_word' => $words->first()->word,
+                    'first_word_options' => $words->first()->options->pluck('option_text')
+                ],
+                'next_step' => 'Llamar a /game/play/' . $categoryId
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'error' => 'Categoría no encontrada',
-                'available_categories' => Category::all()->pluck('id', 'name')
+                'available_categories' => Category::all()->map(function($cat) {
+                    return [
+                        'id' => $cat->id,
+                        'name' => $cat->name,
+                        'word_count' => $cat->words_count
+                    ];
+                })
             ], 404);
         }
     }
 
-    public function play(Request $request)
+    public function play($categoryId, Request $request)
     {
-        // Verificación robusta de autenticación
         $user = $request->user();
         if (!$user) {
-            return response()->json([
-                'error' => 'No autenticado',
-                'solution' => 'Debes hacer login primero y enviar el token en los headers'
-            ], 401);
+            return response()->json(['error' => 'No autenticado'], 401);
         }
 
-        // Usar cache en lugar de sesión para entornos cloud
-        $gameKey = 'game_session_' . $user->id;
+        $gameKey = 'game_session_' . $user->id . '_' . $categoryId;
         $data = Cache::get($gameKey);
 
         if (!$data || empty($data['words'])) {
             return response()->json([
-                'error' => 'Juego no iniciado o sesión expirada',
-                'required_steps' => [
-                    '1. POST /api/login para obtener token',
-                    '2. GET /api/game/start/{categoryId} para iniciar juego',
-                    '3. GET /api/game/play (usando el mismo token)'
-                ],
-                'debug_info' => [
-                    'user_id' => $user->id,
-                    'cache_key' => $gameKey,
-                    'session_status' => $data ? 'exists' : 'missing'
+                'error' => 'Juego no iniciado para esta categoría',
+                'solution' => [
+                    '1. Primero llama a /game/start/' . $categoryId,
+                    '2. Asegúrate de usar el mismo token de autenticación'
                 ]
             ], 400);
         }
 
-        // Verificar progreso del juego
-        $answeredCount = count($data['answered'] ?? []);
+        $answeredCount = count($data['answered']);
         $totalQuestions = count($data['words']);
 
         if ($answeredCount >= $totalQuestions) {
-            return response()->json([
-                'finished' => true,
-                'score' => $data['score'] ?? 0,
-                'total' => $totalQuestions
-            ]);
+            return response()->json(['finished' => true]);
         }
 
-        // Obtener la palabra actual
         $currentWord = $data['words'][$answeredCount];
-
-        // Obtener opciones con cache para mejor rendimiento
-        $options = Cache::remember("word_options_{$currentWord['id']}", now()->addHours(1), function () use ($currentWord) {
-            return Option::where('word_id', $currentWord['id'])
+        $options = Option::where('word_id', $currentWord['id'])
                     ->pluck('option_text')
                     ->toArray();
-        });
 
         return response()->json([
+            'category_id' => $categoryId,
             'word' => $currentWord['word'],
             'id' => $currentWord['id'],
             'options' => $options,
             'question_number' => $answeredCount + 1,
             'total_questions' => $totalQuestions,
-            'progress' => round(($answeredCount / $totalQuestions) * 100) . '%',
             'remaining' => $totalQuestions - $answeredCount
         ]);
     }

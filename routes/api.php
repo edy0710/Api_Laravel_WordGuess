@@ -14,8 +14,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/categories', [GameApiController::class, 'categories']);
     Route::get('/game/start/{categoryId}', [GameApiController::class, 'startGame']);
     
-    // Ruta actualizada para /game/play (cambiada de GET a POST)
-    Route::post('/game/play', [GameApiController::class, 'play']);
+    // Ruta actualizada que requiere categoryId
+    Route::get('/game/play/{categoryId}', [GameApiController::class, 'play']);
     
     Route::post('/game/check', [GameApiController::class, 'checkAnswer']);
     Route::get('/game/results', [GameApiController::class, 'results']);
