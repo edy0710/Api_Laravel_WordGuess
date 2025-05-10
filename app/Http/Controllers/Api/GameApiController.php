@@ -107,8 +107,9 @@ class GameApiController extends Controller
             return response()->json(['error' => 'No autenticado'], 401);
         }
 
-        $gameKey = 'game_session_' . $user->id . '_' . $categoryId;
-        $data = Cache::get($gameKey);
+        // Usamos la misma clave que en startGame()
+        $gameKey = $this->gameKey; // "api_game_data"
+        $data = Session::get($gameKey);
 
         if (!$data || empty($data['words'])) {
             return response()->json([
