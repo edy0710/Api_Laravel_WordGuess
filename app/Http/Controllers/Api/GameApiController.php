@@ -62,32 +62,20 @@ class GameApiController extends Controller
         ]);
     }
 
-    public function play()
+    public function play($wordId)
     {
-        $data = Session::get($this->gameKey);
+        // Buscar la palabra por su ID
+        $word = Word::with('options')->find($wordId);
 
-        if (!$data || empty($data['words'])) {
-            return response()->json(['error' => 'Juego no iniciado'], 400);
+        if (!$word) {
+            return response()->json(['error' => 'Palabra no encontrada'], 404);
         }
-
-        $answeredCount = count($data['answered']);
-        $totalQuestions = count($data['words']);
-
-        if ($answeredCount >= $totalQuestions) {
-            return response()->json(['finished' => true]);
-        }
-
-        $currentWord = $data['words'][$answeredCount];
-        $options = Option::where('word_id', $currentWord['id'])->pluck('option_text');
 
         return response()->json([
-            'word' => $currentWord['word'],
-            'id' => $currentWord['id'],
-            'options' => $options->shuffle()->toArray(),
-            'question_number' => $answeredCount + 1,
-            'total_questions' => $totalQuestions,
-            'score' => $data['score'],
-            'answered_count' => $answeredCount
+            'id' => $word->id,
+            'word' => $word->word,
+            'correct_meaning' => $word->correct_meaning,
+            'options' => $word->options->pluck('option_text')->shuffle()->toArray()
         ]);
     }
 
