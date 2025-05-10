@@ -21,87 +21,90 @@ class GameApiController extends Controller
 
     public function startGame($categoryId)
     {
+        // Verificar autenticación primero
+        if (!auth()->check()) {
+            return response()->json([
+                'error' => 'Unauthorized',
+                'message' => 'Debes iniciar sesión primero',
+                'solution' => 'Realiza una petición POST a /api/login con tus credenciales'
+            ], 401);
+        }
+
+        $user = auth()->user();
+        
         try {
-            // Verificación robusta de autenticación
-            $user = auth()->user();
-            if (!$user) {
-                return response()->json([
-                    'error' => 'Usuario no autenticado',
-                    'solution' => 'Debes hacer login primero y enviar el token válido'
-                ], 401);
-            }
+            // Verificar si la categoría existe y tiene palabras
+            $category = Category::withCount(['words' => function($query) {
+                $query->where('is_active', true); // Suponiendo que tienes este campo
+            }])->findOrFail($categoryId);
 
-            // Validación de categoría
-            $category = Category::withCount('words')->findOrFail($categoryId);
-
-            // Verificar que la categoría tenga palabras
-            if ($category->words_count < 1) {
+            if ($category->words_count < 10) {
                 return response()->json([
-                    'error' => 'Categoría sin palabras',
-                    'message' => 'Esta categoría no contiene palabras disponibles',
-                    'category_id' => $categoryId,
-                    'category_name' => $category->name
+                    'error' => 'Not enough words',
+                    'message' => 'La categoría debe tener al menos 10 palabras activas',
+                    'current_word_count' => $category->words_count,
+                    'category_id' => $categoryId
                 ], 422);
             }
 
-            // Obtener palabras con sus opciones
+            // Obtener 10 palabras aleatorias con opciones mezcladas
             $words = Word::where('category_id', $categoryId)
+                ->where('is_active', true)
                 ->with(['options' => function($query) {
-                    $query->inRandomOrder()->select('id', 'word_id', 'option_text');
+                    $query->select('id', 'word_id', 'option_text')
+                        ->inRandomOrder();
                 }])
                 ->inRandomOrder()
                 ->take(10)
-                ->get()
-                ->map(function($word) {
-                    // Mezclar opciones para cada palabra
-                    $word->options = $word->options->shuffle();
-                    return $word;
-                });
+                ->get();
 
             // Preparar datos del juego
             $gameData = [
+                'user_id' => $user->id,
                 'category_id' => $categoryId,
                 'category_name' => $category->name,
-                'words' => $words->toArray(),
-                'answered' => [],
+                'words' => $words->map(function($word) {
+                    return [
+                        'id' => $word->id,
+                        'word' => $word->word,
+                        'correct_meaning' => $word->correct_meaning,
+                        'options' => $word->options->pluck('option_text')->shuffle()
+                    ];
+                })->toArray(),
+                'current_question' => 0,
                 'score' => 0,
-                'started_at' => now()->toDateTimeString(),
-                'last_activity' => now()->toDateTimeString()
+                'started_at' => now()->toDateTimeString()
             ];
 
-            // Clave única por usuario y categoría
-            $gameKey = 'game_session_' . $user->id . '_' . $categoryId;
-            
-            // Almacenar en cache (2 horas de duración)
+            // Almacenar en cache
+            $gameKey = 'game_'.$user->id.'_'.$categoryId;
             Cache::put($gameKey, $gameData, now()->addHours(2));
 
             return response()->json([
-                'success' => true,
+                'status' => 'success',
                 'message' => 'Juego iniciado correctamente',
-                'game_key' => $gameKey,
-                'category' => [
-                    'id' => $categoryId,
-                    'name' => $category->name
-                ],
-                'game_details' => [
-                    'total_questions' => $words->count(),
-                    'first_word' => $words->first()->word,
-                    'first_word_options' => $words->first()->options->pluck('option_text')
-                ],
-                'next_step' => 'Llamar a /game/play/' . $categoryId
+                'data' => [
+                    'category' => $category->only(['id', 'name']),
+                    'total_questions' => count($gameData['words']),
+                    'first_question' => [
+                        'word' => $gameData['words'][0]['word'],
+                        'options' => $gameData['words'][0]['options']
+                    ],
+                    'game_key' => $gameKey
+                ]
             ]);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
-                'error' => 'Categoría no encontrada',
-                'available_categories' => Category::all()->map(function($cat) {
-                    return [
-                        'id' => $cat->id,
-                        'name' => $cat->name,
-                        'word_count' => $cat->words_count
-                    ];
-                })
+                'error' => 'Category not found',
+                'available_categories' => Category::active()->get(['id', 'name'])
             ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Server error',
+                'message' => $e->getMessage(),
+                'trace' => env('APP_DEBUG') ? $e->getTrace() : null
+            ], 500);
         }
     }
 
