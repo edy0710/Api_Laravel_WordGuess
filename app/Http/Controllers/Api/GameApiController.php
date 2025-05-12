@@ -178,26 +178,24 @@ class GameApiController extends Controller
 
 
 
-    
 
     public function dailyWord()
     {
-        // Genera una clave única por día
         $cacheKey = 'daily_word_' . now()->format('Y-m-d');
 
-        // Si ya hay una palabra guardada en caché, devuélvela
+        // Si ya existe en caché, devuélvela
         if (Cache::has($cacheKey)) {
             return response()->json(Cache::get($cacheKey));
         }
 
-        // Si no, busca una palabra aleatoria
+        // Selecciona una palabra aleatoria de la tabla words
         $word = Word::inRandomOrder()->first();
 
         if (!$word) {
             return response()->json(['error' => 'No hay palabras disponibles'], 404);
         }
 
-        // Obtén las opciones desde la base de datos
+        // Obtén sus opciones desde la base de datos
         $options = $word->options->pluck('option_text')->shuffle()->toArray();
 
         // Datos a guardar en caché
@@ -210,7 +208,7 @@ class GameApiController extends Controller
             'expires_in' => now()->endOfDay()->diffForHumans(now(), true)
         ];
 
-        // Guardar durante 24 horas (hasta medianoche)
+        // Guardar en caché hasta medianoche
         Cache::put($cacheKey, $data, now()->endOfDay());
 
         return response()->json($data);
