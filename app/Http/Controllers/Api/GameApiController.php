@@ -176,29 +176,28 @@ class GameApiController extends Controller
         ]);
     }
 
-
-
-
+    // Método para obtener la palabra del día
     public function dailyWord()
     {
         $cacheKey = 'daily_word_' . now()->format('Y-m-d');
 
-        // Si ya existe en caché, devuélvela
         if (Cache::has($cacheKey)) {
             return response()->json(Cache::get($cacheKey));
         }
 
-        // Selecciona una palabra aleatoria de la tabla words
-        $word = Word::inRandomOrder()->first();
+        // Obtener una palabra aleatoria con sus opciones
+        $word = Word::with(['options' => function ($query) {
+            $query->select('id', 'word_id', 'option_text');
+        }])->inRandomOrder()->first();
 
         if (!$word) {
             return response()->json(['error' => 'No hay palabras disponibles'], 404);
         }
 
-        // Obtén sus opciones desde la base de datos
-        $options = $word->options->pluck('option_text')->shuffle()->toArray();
+        // Mezclar las opciones para que no estén siempre en el mismo orden
+        $options = $word->options->pluck('option_text')->toArray();
+        shuffle($options);
 
-        // Datos a guardar en caché
         $data = [
             'id' => $word->id,
             'word' => $word->word,
@@ -208,37 +207,52 @@ class GameApiController extends Controller
             'expires_in' => now()->endOfDay()->diffForHumans(now(), true)
         ];
 
-        // Guardar en caché hasta medianoche
+        // Guardar en caché hasta el final del día
         Cache::put($cacheKey, $data, now()->endOfDay());
 
         return response()->json($data);
     }
-    
+
+    // Método para verificar la respuesta
     public function checkDailyWord(Request $request)
     {
         $optionText = $request->input('option_text');
-        
+
         if (!$optionText) {
-            return response()->json(['error' => 'No se recibió opción'], 400);
+            return response()->json(['error' => 'Falta opción de respuesta'], 400);
         }
 
-        // Clave de la palabra del día
         $cacheKey = 'daily_word_' . now()->format('Y-m-d');
-        
+
         if (!Cache::has($cacheKey)) {
-            return response()->json(['error' => 'La palabra del día no existe aún'], 404);
+            return response()->json(['error' => 'La palabra del día no está disponible aún'], 500);
         }
 
-        // Recuperar palabra del cache
         $dailyWord = Cache::get($cacheKey);
 
-        // Validar respuesta
-        $isCorrect = $dailyWord['correct_meaning'] === $optionText;
+        $isCorrect = $optionText === $dailyWord['correct_meaning'];
 
         return response()->json([
             'is_correct' => $isCorrect,
-            'correct_answer' => $dailyWord['correct_meaning'],
-            'message' => $isCorrect ? '✅ ¡Respuesta correcta!' : '❌ Inténtalo nuevamente mañana'
+            'correct_meaning' => $dailyWord['correct_meaning'],
+            'message' => $isCorrect ? '✅ ¡Has acertado!' : '❌ Inténtalo mañana'
+        ]);
+    }
+
+    public function allWords()
+    {
+        $words = Word::with(['options' => function ($query) {
+            $query->select('id', 'word_id', 'option_text');
+        }])->get();
+
+        return response()->json([
+            'total_words' => $words->count(),
+            'words' => $words->map(function ($word) {
+                return [
+                    'id' => $word->id,
+                    'word' => $word->word
+                ];
+            })
         ]);
     }
 }
