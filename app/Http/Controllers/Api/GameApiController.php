@@ -8,6 +8,7 @@ use App\Models\Option;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Cache;
 
 class GameApiController extends Controller
 {
