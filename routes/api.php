@@ -20,4 +20,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/game/daily/word', [GameApiController::class, 'dailyWord']);
     Route::post('/game/daily/check', [GameApiController::class, 'checkDailyWord']);
     Route::get('/game/all', [GameApiController::class, 'allWords']);
+    Route::get('/game/words/{count}/{category}/{order}', [GameApiController::class, 'getWordsByCountAndCategory']);
 });

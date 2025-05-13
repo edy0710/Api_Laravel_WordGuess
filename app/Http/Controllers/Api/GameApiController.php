@@ -256,4 +256,56 @@ class GameApiController extends Controller
             })
         ]);
     }
+
+    public function getWordsByCountAndCategory($count, $category, $order = 'asc')
+    {
+        // Validar parámetros
+        if (!is_numeric($count) || $count <= 0) {
+            return response()->json(['error' => 'La cantidad debe ser un número positivo'], 400);
+        }
+
+        if (!is_numeric($category)) {
+            return response()->json(['error' => 'La categoría debe ser un ID numérico'], 400);
+        }
+
+        if (!in_array(strtolower($order), ['asc', 'desc'])) {
+            return response()->json(['error' => 'El orden debe ser "asc" o "desc"'], 400);
+        }
+
+        // Verificar si la categoría existe
+        $categoryExists = Category::find($category);
+        if (!$categoryExists) {
+            return response()->json(['error' => 'Categoría no encontrada'], 404);
+        }
+
+        // Obtener palabras con sus opciones
+        $words = Word::where('category_id', $category)
+            ->with(['options' => function($query) {
+                $query->select('id', 'word_id', 'option_text');
+            }])
+            ->orderBy('word', $order)
+            ->take($count)
+            ->get();
+
+        if ($words->isEmpty()) {
+            return response()->json(['error' => 'No se encontraron palabras en esta categoría'], 404);
+        }
+
+        return response()->json([
+            'total_words' => $words->count(),
+            'category' => [
+                'id' => $categoryExists->id,
+                'name' => $categoryExists->name
+            ],
+            'order' => $order,
+            'words' => $words->map(function ($word) {
+                return [
+                    'id' => $word->id,
+                    'word' => $word->word,
+                    'correct_meaning' => $word->correct_meaning,
+                    'options' => $word->options->pluck('option_text')->shuffle()->toArray()
+                ];
+            })
+        ]);
+    }
 }
