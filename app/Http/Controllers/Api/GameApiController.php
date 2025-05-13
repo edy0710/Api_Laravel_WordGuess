@@ -269,7 +269,7 @@ class GameApiController extends Controller
         }
 
         if (!in_array(strtolower($order), ['asc', 'desc'])) {
-            return response()->json(['error' => 'El orden debe ser "asc" o "desc"'], 400);
+            return response()->json(['error' => 'La orientacion debe ser "asc" o "desc"'], 400);
         }
 
         // Verificar si la categoría existe
