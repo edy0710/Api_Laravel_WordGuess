@@ -65,19 +65,34 @@ class GameApiController extends Controller
 
     public function play($wordId)
     {
-        $word = Word::with('options')->find($wordId);
-        
-        if (!$word) {
-            return response()->json(['error' => 'Palabra no encontrada'], 404);
+        try {
+            \Log::info("Attempting to fetch word ID: ".$wordId); // Debug
+            
+            $word = Word::with(['options' => function($query) {
+                $query->select('id', 'word_id', 'option_text');
+            }])->find($wordId);
+
+            if (!$word) {
+                \Log::error("Word not found: ".$wordId);
+                return response()->json(['error' => 'Word not found'], 404);
+            }
+
+            // Debug: Verifica las opciones cargadas
+            \Log::debug("Word options: ".json_encode($word->options));
+
+            return response()->json([
+                'word_id' => $word->id,
+                'word' => $word->word,
+                'options' => $word->options->shuffle()->pluck('option_text')
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error("Error in play(): ".$e->getMessage());
+            return response()->json([
+                'error' => 'Server error',
+                'message' => $e->getMessage() // Solo en desarrollo
+            ], 500);
         }
-
-        $this->logWordEvent($wordId, 'query');
-
-        return response()->json([
-            'word_id' => $word->id,
-            'word' => $word->word,
-            'options' => $word->options->shuffle()->pluck('option_text')
-        ]);
     }
 
  
