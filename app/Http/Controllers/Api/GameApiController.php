@@ -66,10 +66,12 @@ class GameApiController extends Controller
     public function play($wordId)
     {
         $word = Word::with('options')->find($wordId);
-
+        
         if (!$word) {
             return response()->json(['error' => 'Palabra no encontrada'], 404);
         }
+
+        $this->logWordEvent($wordId, 'query');
 
         return response()->json([
             'word_id' => $word->id,
@@ -83,37 +85,79 @@ class GameApiController extends Controller
     // Verifica si la opción es correcta y devuelve la siguiente palabra
     public function checkAnswer(Request $request)
     {
-        $optionText = $request->input('option_text');
-        $wordId = $request->input('word_id');
-
-        if (!$wordId || !$optionText) {
-            return response()->json(['error' => 'Faltan parámetros'], 400);
-        }
-
-        $word = Word::with('options')->find($wordId);
-
-        if (!$word) {
-            return response()->json(['error' => 'Palabra no encontrada'], 404);
-        }
-
-        $correctMeaning = $word->correct_meaning;
-        $isCorrect = $optionText === $correctMeaning;
-
-        // Obtener siguiente palabra (puedes mejorar esto según tu lógica)
-        $nextWord = Word::where('id', '>', $wordId)
-            ->inRandomOrder()
-            ->first();
-
-        return response()->json([
-            'is_correct' => $isCorrect,
-            'correct_answer' => $correctMeaning,
-            'next_word' => $nextWord ? [
-                'word_id' => $nextWord->id,
-                'word' => $nextWord->word,
-                'options' => $nextWord->options->shuffle()->pluck('option_text')
-            ] : null,
-            'message' => $nextWord ? 'Siguiente pregunta' : 'Fin del juego'
+        // Validación de entrada
+        $request->validate([
+            'option_text' => 'required|string',
+            'word_id' => 'required|integer|exists:words,id'
         ]);
+
+        try {
+            $optionText = $request->input('option_text');
+            $wordId = $request->input('word_id');
+            $userIp = $request->ip();
+
+            // Obtener palabra actual con sus opciones
+            $currentWord = Word::with('options')->findOrFail($wordId);
+            $isCorrect = $optionText === $currentWord->correct_meaning;
+
+            // Registrar evento de respuesta
+            WordEvent::create([
+                'word_id' => $wordId,
+                'event_type' => 'answer',
+                'is_correct' => $isCorrect,
+                'user_ip' => $userIp
+            ]);
+
+            // Obtener siguiente palabra (mejor lógica de selección)
+            $nextWord = Word::where('category_id', $currentWord->category_id)
+                ->where('id', '!=', $wordId)
+                ->inRandomOrder()
+                ->first();
+
+            // Preparar respuesta
+            $response = [
+                'is_correct' => $isCorrect,
+                'correct_answer' => $currentWord->correct_meaning,
+                'current_word' => [
+                    'id' => $currentWord->id,
+                    'word' => $currentWord->word,
+                    'example' => $currentWord->example_sentence // Asumiendo que existe este campo
+                ],
+                'stats' => [
+                    'total_attempts' => WordEvent::where('word_id', $wordId)->count(),
+                    'accuracy' => WordEvent::where('word_id', $wordId)
+                                    ->where('event_type', 'answer')
+                                    ->avg('is_correct') * 100
+                ]
+            ];
+
+            // Agregar siguiente palabra si existe
+            if ($nextWord) {
+                $response['next_word'] = [
+                    'word_id' => $nextWord->id,
+                    'word' => $nextWord->word,
+                    'options' => $nextWord->options->shuffle()->pluck('option_text')
+                ];
+                $response['message'] = 'Siguiente pregunta';
+                
+                // Registrar evento de consulta para la siguiente palabra
+                WordEvent::create([
+                    'word_id' => $nextWord->id,
+                    'event_type' => 'query',
+                    'user_ip' => $userIp
+                ]);
+            } else {
+                $response['message'] = 'Fin del juego. ¡Has completado todas las palabras!';
+            }
+
+            return response()->json($response);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Error al procesar la respuesta',
+                'details' => $e->getMessage()
+            ], 500);
+        }
     }
 
 
@@ -306,6 +350,16 @@ class GameApiController extends Controller
                     'options' => $word->options->pluck('option_text')->shuffle()->toArray()
                 ];
             })
+        ]);
+    }
+
+    private function logWordEvent($wordId, $eventType, $isCorrect = null)
+    {
+        WordEvent::create([
+            'word_id' => $wordId,
+            'event_type' => $eventType,
+            'is_correct' => $isCorrect,
+            'user_ip' => Request::ip()
         ]);
     }
 }
